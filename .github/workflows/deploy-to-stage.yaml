@@ -1,0 +1,54 @@
+name: Deploy Pre-Release to Staging
+
+on:
+  release:
+    types: [published] # Triggers when a release is published (including pre-releases)
+
+jobs:
+  deploy-staging:
+    # Only run if the published release is marked as a pre-release and not a draft
+    if: github.event.release.prerelease == true && github.event.release.draft == false
+    runs-on: ubuntu-latest
+    environment: staging # Optional: Define a GitHub Environment for staging
+    permissions:
+      id-token: write # For AWS OIDC authentication
+      contents: read  # To read repository content if needed for deployment scripts
+
+    steps:
+      # - name: Checkout code (Optional)
+      #   uses: actions/checkout@v4
+      #   # Only needed if your deployment scripts or k8s manifests are in the repo
+
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_GITHUB_ACTIONS_ECR_ROLE # Replace
+      #     aws-region: YOUR_AWS_REGION # e.g., us-east-1
+
+      # - name: Login to Amazon ECR
+      #   id: login-ecr
+      #   uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to Staging
+        env:
+          ECR_REGISTRY: "ecr-registry" 
+          IMAGE_NAME: your-app-name # Replace with your ECR image name
+          IMAGE_TAG: ${{ github.event.release.tag_name }} # Gets tag from the release (e.g., v1.2.3)
+        run: |
+          echo "🚀 Starting deployment to STAGING environment..."
+          echo "Release Name: ${{ github.event.release.name }}"
+          echo "Release Tag (Image Tag): $IMAGE_TAG"
+          echo "Docker Image URI: $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+
+          # --- Dummy Deployment Commands for Staging ---
+          echo "Simulating pulling image $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG..."
+          # docker pull $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG # Actual pull if runner deploys
+
+          echo "Simulating deployment to Staging Kubernetes cluster..."
+          # kubectl config use-context staging-cluster
+          # kubectl set image deployment/my-staging-app my-app-container=$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG -n staging-namespace --record
+          # Or: aws ecs update-service --cluster staging-cluster --service my-staging-service --force-new-deployment --task-definition my-task-family:$IMAGE_TAG
+          # Or: ansible-playbook -i inventories/staging deploy-app.yml -e "image_tag=$IMAGE_TAG"
+
+          echo "✅ Deployment to STAGING initiated for $IMAGE_TAG."
+          echo "Staging URL: http://staging.yourapp.com" # Dummy URL

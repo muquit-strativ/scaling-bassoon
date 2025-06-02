@@ -1,0 +1,57 @@
+name: Deploy Latest Release to Production
+
+on:
+  release:
+    types: [published, edited] # Triggers on new publishes or edits to existing releases
+
+jobs:
+  deploy-production:
+    # Only run if the release is NOT a pre-release and NOT a draft
+    if: github.event.release.prerelease == false && github.event.release.draft == false
+    runs-on: ubuntu-latest
+    environment: production # Optional: Define a GitHub Environment for production (highly recommended)
+    permissions:
+      id-token: write # For AWS OIDC authentication
+      contents: read
+
+    steps:
+      # - name: Checkout code (Optional)
+      #   uses: actions/checkout@v4
+      #   # Only needed if your deployment scripts or k8s manifests are in the repo
+
+      - name: Add Manual Approval (Optional - GitHub Environments Feature)
+        if: ${{ github.event_name == 'release' && github.event.action == 'edited' }} # Example: only for promotions from pre-release
+        # This is a conceptual step. Real manual approval is configured in GitHub Environments.
+        # The workflow would pause here until a designated reviewer approves via the GitHub UI.
+        run: echo "Production deployment for ${{ github.event.release.tag_name }} requires manual approval if configured in Environment settings."
+
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_GITHUB_ACTIONS_ECR_ROLE # Replace
+      #     aws-region: YOUR_AWS_REGION # e.g., us-east-1
+
+      # - name: Login to Amazon ECR
+      #   id: login-ecr
+      #   uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to Production
+        env:
+          ECR_REGISTRY: "ecr-registry" 
+          IMAGE_NAME: your-app-name # Replace with your ECR image name
+          IMAGE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          echo "🚀 Starting deployment to PRODUCTION environment..."
+          echo "Release Name: ${{ github.event.release.name }}"
+          echo "Release Tag (Image Tag): $IMAGE_TAG"
+          echo "Docker Image URI: $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+
+          # --- Dummy Deployment Commands for Production ---
+          echo "Simulating pulling image $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG..."
+          echo "Simulating deployment to Production Kubernetes cluster..."
+          # kubectl config use-context production-cluster
+          # kubectl set image deployment/my-production-app my-app-container=$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG -n production-namespace --record
+          # Or: aws ecs update-service --cluster production-cluster --service my-production-service --force-new-deployment --task-definition my-task-family:$IMAGE_TAG
+
+          echo "✅ Deployment to PRODUCTION initiated for $IMAGE_TAG."
+          echo "Production URL: http://www.yourapp.com" # Dummy URL
