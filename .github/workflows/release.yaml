@@ -73,20 +73,20 @@ jobs:
           git tag "$NEW_VERSION" -m "Release $NEW_VERSION"
           git push origin "$NEW_VERSION"
 
-      - name: Configure AWS credentials (for ECR)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_GITHUB_ACTIONS_ECR_ROLE # Replace with your actual Role ARN
-          aws-region: YOUR_AWS_REGION # e.g., us-east-1
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      # - name: Configure AWS credentials (for ECR)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_GITHUB_ACTIONS_ECR_ROLE # Replace with your actual Role ARN
+      #     aws-region: YOUR_AWS_REGION # e.g., us-east-1
+      #
+      # - name: Login to Amazon ECR
+      #   id: login-ecr
+      #   uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push Docker image to ECR
         id: build-image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY: "ecr-registry" 
           IMAGE_NAME: your-app-name # Replace with your ECR image name
           IMAGE_TAG: ${{ steps.versioner.outputs.new_version }}
         run: |
