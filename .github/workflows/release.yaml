@@ -115,5 +115,5 @@ jobs:
             
             **Docker Image:**
             `${{ steps.build-image.outputs.image_uri }}`
-          draft: false
-          prerelease: false
+          draft: true
+          prerelease: true
