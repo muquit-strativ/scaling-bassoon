@@ -1,0 +1,66 @@
+name: CI/CD - Tag and Release
+
+on:
+  push:
+    branches:
+      - main # Or your production branch
+
+jobs:
+  tag_and_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To push tags and create releases
+      packages: write # To push Docker images to GHCR (if used instead of ECR)
+      id-token: write # For AWS OIDC authentication (recommended for ECR)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for semantic-release to analyze all commits
+
+      - name: Set up Node.js (for semantic-release)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install semantic-release and plugins
+        run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/git @semantic-release/github conventional-changelog-conventionalcommits
+
+      - name: Run semantic-release
+        id: semantic
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCOUNT_ID: ${{ steps.login-ecr.outputs.registry }} # ECR registry ID
+          ECR_REGISTRY_URI: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_NAME: your-app-name
+        # This step would:
+        # 1. Determine new version based on commits
+        # 2. Create Git tag
+        # 3. Generate release notes
+        # 4. (Potentially) Build, tag, and push Docker image via custom scripts or semantic-release plugins
+        # For a more explicit Docker build, separate it after semantic-release creates the tag.
+        # The script below is a conceptual placeholder for semantic-release's capabilities
+        # or a custom script you might invoke.
+        run: |
+          npx semantic-release
+          # If semantic-release doesn't handle Docker directly, get the new tag:
+          # export NEW_VERSION=$(git describe --tags --abbrev=0)
+          # echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+      # --- If Docker steps are not part of semantic-release plugin ---
+      - name: Get the new version tag (if not exposed by semantic-release)
+        if: env.NEW_VERSION == '' # Only run if semantic-release didn't directly set it
+        run: echo "NEW_VERSION=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
+
+      - name: Build, tag, and push Docker image to ECR
+        if: env.NEW_VERSION != '' # Ensure a version was created
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_NAME: your-app-name
+        run: |
+          docker build -t $ECR_REGISTRY/$IMAGE_NAME:${{ env.NEW_VERSION }} .
+
+      # semantic-release typically creates the GitHub release as part of its process
+      # If not, you'd add a step here using `actions/create-release` or `gh release create`
+      # with ${{ env.NEW_VERSION }} and release notes.
