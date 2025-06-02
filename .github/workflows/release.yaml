@@ -1,66 +1,119 @@
-name: CI/CD - Tag and Release
+name: CI/CD - Manual Version Tag and Release
 
 on:
   push:
     branches:
-      - main # Or your production branch
+      - main # Or your production branch, e.g., production
+
+permissions:
+  contents: write   # To create tags and releases
 
 jobs:
-  tag_and_release:
+  tag-and-release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # To push tags and create releases
-      packages: write # To push Docker images to GHCR (if used instead of ECR)
-      id-token: write # For AWS OIDC authentication (recommended for ECR)
+    outputs:
+      new_version: ${{ steps.versioner.outputs.new_version }}
+      image_uri: ${{ steps.build-image.outputs.image_uri }} # Output for potential downstream jobs
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for semantic-release to analyze all commits
+          fetch-depth: 0 # Required to get all tags and commit history
 
-      - name: Set up Node.js (for semantic-release)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 'lts/*'
-
-      - name: Install semantic-release and plugins
-        run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/git @semantic-release/github conventional-changelog-conventionalcommits
-
-      - name: Run semantic-release
-        id: semantic
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AWS_ACCOUNT_ID: ${{ steps.login-ecr.outputs.registry }} # ECR registry ID
-          ECR_REGISTRY_URI: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_NAME: your-app-name
-        # This step would:
-        # 1. Determine new version based on commits
-        # 2. Create Git tag
-        # 3. Generate release notes
-        # 4. (Potentially) Build, tag, and push Docker image via custom scripts or semantic-release plugins
-        # For a more explicit Docker build, separate it after semantic-release creates the tag.
-        # The script below is a conceptual placeholder for semantic-release's capabilities
-        # or a custom script you might invoke.
+      - name: Configure Git User
         run: |
-          npx semantic-release
-          # If semantic-release doesn't handle Docker directly, get the new tag:
-          # export NEW_VERSION=$(git describe --tags --abbrev=0)
-          # echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      # --- If Docker steps are not part of semantic-release plugin ---
-      - name: Get the new version tag (if not exposed by semantic-release)
-        if: env.NEW_VERSION == '' # Only run if semantic-release didn't directly set it
-        run: echo "NEW_VERSION=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
+      - name: Get Latest Commit Message
+        id: commit_message
+        run: echo "message=$(git log -1 --pretty=%B)" >> $GITHUB_OUTPUT
+
+      - name: Calculate Next Version and Create Tag
+        id: versioner
+        run: |
+          # Fetch all tags
+          git fetch --tags --force
+
+          LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1` 2>/dev/null || echo "v0.0.0") # Default if no tags
+          LATEST_TAG_CLEAN=${LATEST_TAG#v} # Remove 'v' prefix if present
+
+          IFS='.' read -r -a VERSION_PARTS <<< "$LATEST_TAG_CLEAN"
+          MAJOR=${VERSION_PARTS[0]:-0}
+          MINOR=${VERSION_PARTS[1]:-0}
+          PATCH=${VERSION_PARTS[2]:-0}
+
+          COMMIT_MSG="${{ steps.commit_message.outputs.message }}"
+
+          if [[ "$COMMIT_MSG" == *"[major]"* ]] || [[ "$COMMIT_MSG" == *"#major"* ]]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [[ "$COMMIT_MSG" == *"[minor]"* ]] || [[ "$COMMIT_MSG" == *"#minor"* ]]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else # Default to patch
+            PATCH=$((PATCH + 1))
+          fi
+
+          # Handle initial version case where LATEST_TAG was v0.0.0 and no keyword specified
+          if [[ "$LATEST_TAG" == "v0.0.0" ]] && [[ "$MAJOR" -eq 0 ]] && [[ "$MINOR" -eq 0 ]] && [[ "$PATCH" -eq 1 ]]; then
+            MAJOR=0
+            MINOR=1
+            PATCH=0
+          fi
+
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          echo "Current latest tag: $LATEST_TAG"
+          echo "Determined new version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Create and push Git tag
+          git tag "$NEW_VERSION" -m "Release $NEW_VERSION"
+          git push origin "$NEW_VERSION"
+
+      - name: Configure AWS credentials (for ECR)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_GITHUB_ACTIONS_ECR_ROLE # Replace with your actual Role ARN
+          aws-region: YOUR_AWS_REGION # e.g., us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push Docker image to ECR
-        if: env.NEW_VERSION != '' # Ensure a version was created
+        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_NAME: your-app-name
+          IMAGE_NAME: your-app-name # Replace with your ECR image name
+          IMAGE_TAG: ${{ steps.versioner.outputs.new_version }}
         run: |
-          docker build -t $ECR_REGISTRY/$IMAGE_NAME:${{ env.NEW_VERSION }} .
+          docker build -t $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+          # Optionally, also tag as 'latest'
+          docker tag $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG $ECR_REGISTRY/$IMAGE_NAME:latest
 
-      # semantic-release typically creates the GitHub release as part of its process
-      # If not, you'd add a step here using `actions/create-release` or `gh release create`
-      # with ${{ env.NEW_VERSION }} and release notes.
+          docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$IMAGE_NAME:latest # Push 'latest' tag
+
+          echo "Pushed ECR Image: $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+          echo "image_uri=$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.versioner.outputs.new_version }}
+          release_name: Release ${{ steps.versioner.outputs.new_version }}
+          body: |
+            Released version ${{ steps.versioner.outputs.new_version }}
+
+            **Changes:**
+            ${{ steps.commit_message.outputs.message }}
+            
+            **Docker Image:**
+            `${{ steps.build-image.outputs.image_uri }}`
+          draft: false
+          prerelease: false
