@@ -21,11 +21,10 @@ jobs:
         with:
           fetch-depth: 0 # Required to get all tags and commit history
       - name: Bump version and push tag
-        id: versioner
-        uses: laputansoft/github-tag-action@v4.6
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ steps.package-version.outputs.version }}
       # - name: Configure Git User
       #   run: |
       #     git config user.name "${{ github.actor }}"
@@ -110,13 +109,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.versioner.outputs.new_version }}
-          release_name: Release ${{ steps.versioner.outputs.new_version }}
+          tag_name: ${{ steps.versioner.outputs.new_tag }}
+          release_name: Release ${{ steps.versioner.outputs.new_tag }}
           body: |
-            Released version ${{ steps.versioner.outputs.new_version }}
+            Released version ${{ steps.versioner.outputs.new_tag }}
 
             **Changes:**
-            ${{ steps.commit_message.outputs.message }}
+            ${{ steps.versioner.outputs.changelog }}
             
             **Docker Image:**
             `${{ steps.build-image.outputs.image_uri }}`
