@@ -34,6 +34,7 @@ jobs:
           # pre_release_branches: development
           append_to_pre_release_tag: dev
           default_bump: false
+          prerelease: true
   staging:
     if: needs.set-env.outputs.branch == 'staging'
     needs: set-env
