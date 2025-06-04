@@ -21,6 +21,8 @@ jobs:
       tag: ${{ steps.tagger.outputs.tag }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Required to get all tags and commit history
       - name: Bump version and push tag
         id: versioner
         uses: mathieudutour/github-tag-action@v6.2
