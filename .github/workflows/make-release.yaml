@@ -18,7 +18,7 @@ jobs:
     needs: set-env
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tagger.outputs.tag }}
+      tag: ${{ steps.versioner.outputs.new_tag }}
     steps:
       - uses: actions/checkout@v3
         with:
