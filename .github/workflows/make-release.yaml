@@ -5,6 +5,8 @@ on:
       - development
       - staging
       - production
+permissions:
+  contents: write # To create tags and releases
 jobs:
   set-env:
     runs-on: ubuntu-latest
@@ -20,7 +22,8 @@ jobs:
     outputs:
       tag: ${{ steps.versioner.outputs.new_tag }}
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Required to get all tags and commit history
       - name: Bump version and push tag
@@ -38,7 +41,10 @@ jobs:
     outputs:
       tag: ${{ steps.tagger.outputs.tag }}
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to get all tags and commit history
       - id: version
         run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
       - name: Generate beta tag
@@ -64,7 +70,10 @@ jobs:
       tag: ${{ steps.versioner.outputs.new_tag }}
       changelog: ${{ steps.versioner.outputs.changelog }}
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to get all tags and commit history
       - name: Auto-tag production
         id: versioner
         uses: mathieudutour/github-tag-action@v6.2
