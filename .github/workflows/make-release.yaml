@@ -1,4 +1,4 @@
-name: Create and publish tag release
+name: Multi-Env Release Pipeline
 on:
   push:
     branches:
@@ -6,61 +6,90 @@ on:
       - staging
       - production
 jobs:
-  tag-and-release:
+  set-env:
     runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.set.outputs.branch }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      - name: Get current version from package.json (or other source)
-        id: get_version
-        run: |
-          VERSION=$(jq -r .version package.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-      - name: Get branch name
-        id: get_branch
+      - id: set
         run: echo "branch=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
-      - name: Get existing tags
-        id: get_tags
+  development:
+    if: needs.set-env.outputs.branch == 'development'
+    needs: set-env
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tagger.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: version
+        run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+      - name: Generate dev tag
+        id: tagger
         run: |
+          VERSION=${{ steps.version.outputs.version }}
           git fetch --tags
-          echo "tags=$(git tag)" >> $GITHUB_OUTPUT
-      - name: Compute next tag
-        id: compute_tag
+          PREFIX="v$VERSION-dev"
+          COUNT=$(git tag | grep "^$PREFIX" | sed -E "s/^$PREFIX([0-9]+)$/\1/" | sort -n | tail -n1)
+          NEXT=$((COUNT + 1))
+          TAG="$PREFIX$NEXT"
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $TAG
+          git push origin $TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+  staging:
+    if: needs.set-env.outputs.branch == 'staging'
+    needs: set-env
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tagger.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: version
+        run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+      - name: Generate beta tag
+        id: tagger
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          BRANCH=${{ steps.get_branch.outputs.branch }}
-          TAG_PREFIX=""
+          VERSION=${{ steps.version.outputs.version }}
+          git fetch --tags
+          PREFIX="v$VERSION-beta"
+          COUNT=$(git tag | grep "^$PREFIX" | sed -E "s/^$PREFIX([0-9]+)$/\1/" | sort -n | tail -n1)
+          NEXT=$((COUNT + 1))
+          TAG="$PREFIX$NEXT"
 
-          if [ "$BRANCH" = "development" ]; then
-            TAG_PREFIX="-dev"
-          elif [ "$BRANCH" = "staging" ]; then
-            TAG_PREFIX="-beta"
-          fi
-
-          # Get latest tag with this version and suffix
-          BASE_TAG="v$VERSION$TAG_PREFIX"
-          COUNT=$(git tag | grep "^$BASE_TAG" | sed -E "s/^$BASE_TAG([0-9]*)$/\1/" | sort -n | tail -n1)
-          NEXT_NUM=$((COUNT + 1))
-
-          if [ "$TAG_PREFIX" = "" ]; then
-            FINAL_TAG="v$VERSION"
-          else
-            FINAL_TAG="$BASE_TAG$NEXT_NUM"
-          fi
-
-          echo "Computed tag: $FINAL_TAG"
-          echo "tag=$FINAL_TAG" >> $GITHUB_OUTPUT
-      - name: Create Git Tag
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git tag ${{ steps.compute_tag.outputs.tag }}
-          git push origin ${{ steps.compute_tag.outputs.tag }}
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $TAG
+          git push origin $TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+  production:
+    if: needs.set-env.outputs.branch == 'production'
+    needs: set-env
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.versioner.outputs.new_tag }}
+      changelog: ${{ steps.versioner.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Auto-tag production
+        id: versioner
+        uses: mathieudutour/github-tag-action@v6.2
         with:
-          tag_name: ${{ steps.compute_tag.outputs.tag }}
-          name: Release ${{ steps.compute_tag.outputs.tag }}
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+  release:
+    needs: [development, staging, production]
+    runs-on: ubuntu-latest
+    if: ${{ always() && (needs.development.result == 'success' || needs.staging.result == 'success' || needs.production.result == 'success') }}
+    steps:
+      - name: Determine tag
+        id: get_tag
+        run: |
+          TAG="${{ needs.production.outputs.tag || needs.staging.outputs.tag || needs.development.outputs.tag }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.get_tag.outputs.tag }}
+          name: Release ${{ steps.get_tag.outputs.tag }}
+          prerelease: ${{ contains(steps.get_tag.outputs.tag, '-dev') || contains(steps.get_tag.outputs.tag, '-beta') }}
