@@ -32,8 +32,8 @@ jobs:
           images: "registry_name/image_name"
           tags: |
             type=raw,value=${{ steps.versioner.outputs.new_tag }}
-            type=raw,value=main
-            type=sha
+            type=semver,value={{version}}
+            type=raw,value=latest
       - name: Build, tag, and push Docker image to Amazon ECR
         uses: docker/build-push-action@v6
         id: build-image
@@ -60,4 +60,6 @@ jobs:
 
             **Docker Image:**
             `${{ steps.build-image.outputs.metadata }}`
+            `${{ steps.metadata.outputs.tags }}`
+            `${{ steps.metadata.outputs.json }}`
           draft: true
