@@ -1,0 +1,66 @@
+name: Create and publish tag release
+on:
+  push:
+    branches:
+      - development
+      - staging
+      - production
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Get current version from package.json (or other source)
+        id: get_version
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Get branch name
+        id: get_branch
+        run: echo "branch=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+      - name: Get existing tags
+        id: get_tags
+        run: |
+          git fetch --tags
+          echo "tags=$(git tag)" >> $GITHUB_OUTPUT
+      - name: Compute next tag
+        id: compute_tag
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          BRANCH=${{ steps.get_branch.outputs.branch }}
+          TAG_PREFIX=""
+
+          if [ "$BRANCH" = "development" ]; then
+            TAG_PREFIX="-dev"
+          elif [ "$BRANCH" = "staging" ]; then
+            TAG_PREFIX="-beta"
+          fi
+
+          # Get latest tag with this version and suffix
+          BASE_TAG="v$VERSION$TAG_PREFIX"
+          COUNT=$(git tag | grep "^$BASE_TAG" | sed -E "s/^$BASE_TAG([0-9]*)$/\1/" | sort -n | tail -n1)
+          NEXT_NUM=$((COUNT + 1))
+
+          if [ "$TAG_PREFIX" = "" ]; then
+            FINAL_TAG="v$VERSION"
+          else
+            FINAL_TAG="$BASE_TAG$NEXT_NUM"
+          fi
+
+          echo "Computed tag: $FINAL_TAG"
+          echo "tag=$FINAL_TAG" >> $GITHUB_OUTPUT
+      - name: Create Git Tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag ${{ steps.compute_tag.outputs.tag }}
+          git push origin ${{ steps.compute_tag.outputs.tag }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.compute_tag.outputs.tag }}
+          name: Release ${{ steps.compute_tag.outputs.tag }}
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
