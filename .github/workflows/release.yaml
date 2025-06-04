@@ -45,13 +45,11 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
           tags: ${{ steps.metadata.outputs.tags }}
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create a GitHub release
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: ${{ steps.versioner.outputs.new_tag }}
-          release_name: Release ${{ steps.versioner.outputs.new_tag }}
+          tag: ${{ steps.versioner.outputs.new_tag }}
+          name: Release ${{ steps.versioner.outputs.new_tag }}
           body: |
             Released version ${{ steps.versioner.outputs.new_tag }}
 
