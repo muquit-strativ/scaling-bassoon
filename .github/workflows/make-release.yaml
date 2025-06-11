@@ -33,9 +33,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # pre_release_branches: development
           append_to_pre_release_tag: dev
-          default_bump: false
+          default_bump: prerelease
           prerelease: true
-          custom_release_rules: feat:custom,fix:custom
+          # custom_release_rules: feat:custom,fix:custom
   staging:
     if: needs.set-env.outputs.branch == 'staging'
     needs: set-env
